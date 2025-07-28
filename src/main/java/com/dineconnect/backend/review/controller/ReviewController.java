@@ -25,7 +25,7 @@ public class ReviewController {
     @ResponseStatus(HttpStatus.CREATED)
     public DineConnectResponse addReview(
             @PathVariable String restaurantId,
-            @RequestBody  @Valid ReviewRequest review) {
+            @RequestBody @Valid ReviewRequest review) {
         return new DineConnectResponse(
                 "success",
                 "Review added successfully",

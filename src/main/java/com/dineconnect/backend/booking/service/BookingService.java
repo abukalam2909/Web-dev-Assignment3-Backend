@@ -4,6 +4,11 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
 import com.dineconnect.backend.booking.dto.BookingRequest;
@@ -37,7 +42,6 @@ public class BookingService {
                 .status(BookingStatus.CONFIRMED)
                 .build();
 
-        // Check if a cancelled booking already exists for the same slot
         Booking existing = bookingRepository.findByUserIdAndRestaurantIdAndBookingDateAndBookingTimeAndStatus(
             userId,
             request.restaurantId(),
@@ -47,11 +51,9 @@ public class BookingService {
         );
 
         if (existing != null) {
-            // Reactivate the cancelled booking
             existing.setStatus(BookingStatus.CONFIRMED);
             existing.setNumberOfGuests(request.numberOfGuests());
             Booking reactivated = bookingRepository.save(existing);
-
             String restaurantName = restaurantService.getRestaurantById(request.restaurantId()).name();
             return mapToResponse(reactivated, restaurantName);
         }
@@ -63,26 +65,30 @@ public class BookingService {
             request.bookingTime(),
             BookingStatus.CONFIRMED
         );
-            
+
         if (confirmedBookingExists) {
             throw new BookingAlreadyExistsException("You already have a confirmed booking at this time.");
         }
-            
-        
+
         booking = bookingRepository.save(booking);
         String restaurantName = restaurantService.getRestaurantById(request.restaurantId()).name();
-
         return mapToResponse(booking, restaurantName);
     }
 
     public List<BookingResponse> getUserBookings(String userId) {
         List<Booking> bookings = bookingRepository.findByUserId(userId);
-        
         if (bookings.isEmpty()) {
             throw new BookingNotFoundException("No bookings found for user: " + userId);
         }
-    
         return bookings.stream()
+                .map(b -> mapToResponse(b, ""))
+                .collect(Collectors.toList());
+    }
+
+    public List<BookingResponse> getUserBookings(String userId, int page, int size) {
+        Pageable pageable = PageRequest.of(page, size, Sort.by("bookingDate").descending());
+        Page<Booking> bookings = bookingRepository.findByUserId(userId, pageable);
+        return bookings.getContent().stream()
                 .map(b -> mapToResponse(b, ""))
                 .collect(Collectors.toList());
     }
@@ -90,15 +96,12 @@ public class BookingService {
     public void cancelBooking(String bookingId, String userId) {
         Booking booking = bookingRepository.findById(bookingId)
                 .orElseThrow(() -> new BookingNotFoundException("Booking with ID " + bookingId + " not found"));
-        
         if (!booking.getUserId().equals(userId)) {
             throw new SecurityException("Unauthorized to cancel this booking");
         }
-
         if (booking.getStatus() == BookingStatus.CANCELLED) {
             throw new BookingAlreadyCancelledException("This booking has already been cancelled.");
         }
-
         booking.setStatus(BookingStatus.CANCELLED);
         bookingRepository.save(booking);
     }
@@ -115,12 +118,7 @@ public class BookingService {
                 .build();
     }
 
-    public List<BookingResponse> getRestaurantBookings(String restaurantId, LocalDate date) {
-        return date != null
-                ? getBookingsByRestaurantAndDate(restaurantId, date)
-                : getBookingsByRestaurant(restaurantId);
-    }
-    
+    @Cacheable(value = "restaurantBookings", key = "#restaurantId")
     public List<BookingResponse> getBookingsByRestaurant(String restaurantId) {
         restaurantServiceUtil.checkIfRestaurantExists(restaurantId);
         return bookingRepository.findByRestaurantIdOrderByBookingDateDesc(restaurantId)
@@ -129,12 +127,11 @@ public class BookingService {
                 .toList();
     }
 
-    
+    @Cacheable(value = "restaurantBookingsByDate", key = "#restaurantId + '-' + #date")
     public List<BookingResponse> getBookingsByRestaurantAndDate(String restaurantId, LocalDate date) {
         return bookingRepository.findByRestaurantIdAndBookingDateOrderByBookingTimeAsc(restaurantId, date)
                 .stream()
                 .map(b -> mapToResponse(b, ""))
                 .toList();
-    }    
-
+    }
 }

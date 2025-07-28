@@ -9,10 +9,11 @@ import org.springframework.stereotype.Repository;
 
 import com.dineconnect.backend.booking.model.Booking;
 import com.dineconnect.backend.booking.model.BookingStatus;
+import org.springframework.data.domain.Pageable;
 
 @Repository
 public interface BookingRepository extends MongoRepository<Booking, String> {
-    List<Booking> findByUserId(String userId);
+    List<Booking> findByUserId(String userId, Pageable pageable);
     List<Booking> findByRestaurantId(String restaurantId);
     List<Booking> findByRestaurantIdAndBookingDate(String restaurantId, LocalDate bookingDate);
     List<Booking> findByRestaurantIdOrderByBookingDateDesc(String restaurantId);
